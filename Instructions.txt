@@ -1,0 +1,24 @@
+-----------------------------------------------------
+***************		INSTRUCTIONS 	**************
+		FLOOD MAX ALGORITHM ASYNCH
+-----------------------------------------------------
+
+For setting up Environment 
+
+1. From command line  :
+---------------------------------------
+	wget http://downloads.lightbend.com/scala/2.11.7/scala-2.11.7.tgz
+	tar zxvf scala-2.11.7.tgz
+	cd scala-2.11.7/bin
+
+
+2. Place the project files all *.scala files and connectivity.txt in this folder 
+
+
+
+3. To run the program 
+-------------------------------------------------
+	
+From this bin folder : 
+
+	scala FloodMax.scala <n>  <connectivity file file path>
