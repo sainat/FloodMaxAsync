@@ -27,19 +27,18 @@ object FloodMax {
     }
 
     val (numThreads, nodesMap) = readDataFile(args(0))
-    if(numThreads == 0 || nodesMap.isEmpty)
+    if (numThreads == 0 || nodesMap.isEmpty)
       println("Data source issue : something wrong while reading data file")
-    val barrier = new CyclicBarrier(numThreads)
-    val nodes = nodesMap.map(kv=>kv._2)
-    val threads = for{
+    val barrier = new Phaser(numThreads)
+    val nodes = nodesMap.map(kv => kv._2)
+    val threads = for {
       node <- nodes
     } yield new Thread(new AsyncFMaxThread(node, node.nbrs, barrier), node.id.toString)
-    threads.foreach{
+    threads.foreach {
       t =>
         t.start()
     }
   }
-
   def printEx(e: Exception): Any = {
     System.err.println(e.printStackTrace())
     System.exit(1)

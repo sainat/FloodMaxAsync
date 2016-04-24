@@ -1,13 +1,11 @@
 package utd.distributed.computing
 
 import java.util.concurrent.{CyclicBarrier, Phaser}
-
 import scala.collection.mutable
 import scala.collection.mutable.{ListBuffer, HashMap, Queue}
 import scala.collection.parallel.immutable
 import scala.collection.immutable.Set
 import scala.concurrent.Future
-
 import scala.util.Random
 
 /**
@@ -15,7 +13,7 @@ import scala.util.Random
   */
 
 
-class AsyncFMaxThread(me: Node, nbrs: mutable.Set[Node], barrier: CyclicBarrier) extends Runnable {
+class AsyncFMaxThread(me: Node, nbrs: mutable.Set[Node], barrier: Phaser) extends Runnable {
 
   var notifiedChildren = 0  // number of children that have notified that they are done with their processing and all their children are done processing
   var totalChildren = 0   // total number of nodes that notified me that they got their maxuid from me
@@ -32,34 +30,38 @@ class AsyncFMaxThread(me: Node, nbrs: mutable.Set[Node], barrier: CyclicBarrier)
   var delayedMessagesQueue = mutable.Queue[(Int, Message)]() // holds the (delay, message queue)
   val readyMsgsQueue = mutable.Queue[Message]()
   val random = new Random()
-  var parent = this.me  // initally parent is me
+  var parent = this.me.id  // initally parent is me
+
+  var doneSent = false
 
   // log levels
-  val debug = true
+  val debug = false
   val info = true
   val trace = false
 
   nbrs.foreach(nbr => nbrNodesMap.put(nbr.id, nbr))
-  nbrsSet ++ nbrs.map(nbr => nbr.id)
+  nbrs.map(nbr => nbrsSet.add(nbr.id))
 
   override def run(): Unit = {
     while (!leaderElected){
-      barrier.await()
-      round = round + 1
+      barrier.arriveAndAwaitAdvance()
+      logTrace("Doing work ")
       if (newInfo) {
         floodNeighborsWithMaxUID(round)
         newInfo = false
       }
-      barrier.await()
-      processMsgs(round)   /// process messages return false if no max id is detected
-      barrier.await()
+      //barrier.await()
+      processMsgs(round)
+      //barrier.await()
       sendMsgsForRound(round)
-      barrier.await()
+      //barrier.await()
     }
-    if(me.id == maxSeenSoFar && parent.id == me.id){
-      logInfo(s" I AM THE LEADER -> $maxSeenSoFar")
+    while(!delayedMessagesQueue.isEmpty) {
+      sendMsgsForRound(round)
+      barrier.arriveAndAwaitAdvance()
     }
-
+    barrier.arriveAndDeregister()
+    logDebug(s" Done with algorithm ")
   }
 
   def isNodeDone(): Boolean = {
@@ -79,9 +81,6 @@ class AsyncFMaxThread(me: Node, nbrs: mutable.Set[Node], barrier: CyclicBarrier)
 
   }
 
-  def floodChildrenWithLeaderMsg(lMsg: LeaderMessage) = {
-    children.foreach(child => addMsgToQueue(lMsg.copy(destn = child, round=this.round)))
-  }
 
 
   def sendNak(destn: Int): Unit = {
@@ -92,21 +91,29 @@ class AsyncFMaxThread(me: Node, nbrs: mutable.Set[Node], barrier: CyclicBarrier)
     addMsgToQueue(ReplyMessage(me.id, destn, this.round, true))
   }
 
+  def sendDoneMsg(logText: String) =
+    if (!doneSent  && me.id != parent) {
+      addMsgToQueue(DoneMessage(me.id, parent, this.round))
+      doneSent = true
+      logDebug(logText)
+    }
+
   def checkIfDoneAndNotifyParent(): Unit = {
-    if(doneChildren == children && me.id !=parent.id) {
-      addMsgToQueue(DoneMessage(parent.id, me.id, this.round))
-    }
-    else if ((talkedToNeighbors == nbrsSet)
-          && ((parent.id == me.id) && me.id == maxSeenSoFar)
-          && doneChildren == children.union(nonChildren)) {
-      leaderElected = true
-      floodChildrenWithLeaderMsg(LeaderMessage(me.id,me.id,this.round,me.id))
-    }
+      if (children == nbrsSet && doneChildren == nbrsSet) {// i'm leader
+        logInfo(s" ****************************    I AM THE LEADER -> $maxSeenSoFar ********************************")
+        leaderElected = true
+        floodChildrenWithLeaderMsg(LeaderMessage(me.id, me.id, this.round, me.id))
+      }
+      else if (nonChildren == (nbrsSet - parent) && talkedToNeighbors == nbrsSet) // leaf node termination
+        sendDoneMsg(s"LEAF sending Done to ${parent}")
+
+      else if (doneChildren == children && children.union(nonChildren) == nbrsSet)  //
+        sendDoneMsg(s" non leaf Done -> parent : ${parent}")
   }
 
   def sendRemoveChild(id: Int) = {
     logDebug(s"sending remove child to ${id}")
-    addMsgToQueue(RemoveChild(me.id, parent.id, this.round))
+    addMsgToQueue(RemoveChild(me.id, parent, this.round))
   }
 
   def processMsgs(round: Int): Unit = {
@@ -116,16 +123,17 @@ class AsyncFMaxThread(me: Node, nbrs: mutable.Set[Node], barrier: CyclicBarrier)
       msg match {
         case floodMsg: FloodMessage =>
           talkedToNeighbors.add(floodMsg.source)
-          if(floodMsg.max_uid <= maxSeenSoFar)
+          if (floodMsg.max_uid <= maxSeenSoFar){
             sendNak(floodMsg.source)
+          }
           else  {
             logDebug(s" got a new max_id -> ${floodMsg.max_uid}")
             maxSeenSoFar = floodMsg.max_uid
-            if(parent != this.me) { // notify the previous parent that its no longer my parent  .. ignore if its the first round
-              sendRemoveChild(parent.id)
+            if (parent != this.me.id) { // notify the previous parent that its no longer my parent  .. ignore if its the first round
+              sendRemoveChild(parent)
             }
-            parent = nbrNodesMap.getOrElse(maxSeenSoFar, this.me)
-            sendAck(parent.id)
+            parent = nbrNodesMap.getOrElse(floodMsg.source, this.me).id
+            sendAck(parent)
             newInfo = true
           }
 
@@ -140,25 +148,32 @@ class AsyncFMaxThread(me: Node, nbrs: mutable.Set[Node], barrier: CyclicBarrier)
             children.remove(replyMsg.source)
           }
           checkIfDoneAndNotifyParent()
-
         case doneMsg : DoneMessage =>
           logDebug(s" got a DONE MSG from -> ${doneMsg.source}")
           doneChildren.add(doneMsg.source)
           checkIfDoneAndNotifyParent()
-
         case rmChild: RemoveChild =>
           logDebug(s" got a Remove MSG from -> ${rmChild.source}")
           children.remove(rmChild.source)
           nonChildren.add(rmChild.source)
-
         case lm: LeaderMessage =>
-          logDebug(s" got a Remove MSG from -> ${lm.source}")
-          floodChildrenWithLeaderMsg(lm)
+          logInfo(s" leader : ${lm.leaderUid}")
+          floodChildrenWithLeaderMsg(LeaderMessage(me.id,me.id, round, lm.leaderUid))
           leaderElected = true
       }
 
     }
   }
+
+  def floodChildrenWithLeaderMsg(lMsg: LeaderMessage) = {
+    nbrsSet.foreach(
+      child => {
+        addMsgToQueue(lMsg.copy(destn = child, round = this.round))
+        logDebug(s"sent Leader message to child ${child}  ")
+      }
+    )
+  }
+
 
 
   //after decrementing each msg delay by 1, dequeu 0 delay msgs from delayQueue  and add to readyQueue
@@ -171,7 +186,7 @@ class AsyncFMaxThread(me: Node, nbrs: mutable.Set[Node], barrier: CyclicBarrier)
     delayedMessagesQueue = delayedMessagesQueue.map(kv => if(kv._1 != 0) (kv._1 - 1, kv._2) else kv)
 
     while(!delayedMessagesQueue.isEmpty && delayedMessagesQueue.head._1 == 0) {
-      var delayedMsg: (Int, Message) = delayedMessagesQueue.dequeue()
+      val delayedMsg: (Int, Message) = delayedMessagesQueue.dequeue()
       readyMsgsQueue.enqueue(delayedMsg._2)             // add to ready messages
     }
     while(!readyMsgsQueue.isEmpty)
@@ -186,13 +201,11 @@ class AsyncFMaxThread(me: Node, nbrs: mutable.Set[Node], barrier: CyclicBarrier)
   }
 
   def sendMsgToRecipient(msg: Message): Unit = {
-    nbrNodesMap.get(msg.destn).foreach(nbr => nbr.inMsgs.put(msg))  // used foreach
+    nbrNodesMap.get(msg.destn)
+      .foreach(nbr => nbr.inMsgs.put(msg))  // used foreach
   }
 
-  def logInfo(text: String) = if(info) println(s"${System.currentTimeMillis()} ${me.id} Thread : "  + text)
-  def logDebug(text: String) = if(debug) println(s"${System.currentTimeMillis()} ${me.id} Thread :" + text)
-  def logTrace(text: String) = if(trace) println(s"${System.currentTimeMillis()} ${me.id} Thread : "  + text)
+  def logInfo(text: String) = if(info) println(s"${System.currentTimeMillis()}  Thread ${me.id} : $text\t parent : ${parent} ")
+  def logDebug(text: String) = if(debug) println(s"${System.currentTimeMillis()}  Thread ${me.id} : $text\t parent is : ${parent} ")
+  def logTrace(text: String) = if(trace) println(s"${System.currentTimeMillis()}  Thread ${me.id} : $text\tparent is : ${parent} ")
 }
-
-
-
