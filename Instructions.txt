@@ -22,3 +22,76 @@ For setting up Environment
 From this bin folder : 
 
 	scala FloodMax.scala <n>  <connectivity file file path>
+
+
+
+
+
+Sample Connectivity 1:
+-----------------------------------------------
+
+12
+23	34	1	21	22	24	53	35	2	31	231	41
+1	1	0	1	0	0	0	1	0	0	0	0
+1	1	1	0	1	0	0	0	0	0	0	0
+0	1	1	0	1	1	0	0	0	0	0	0
+1	0	0	1	0	0	1	1	0	0	0	0
+0	1	1	0	1	1	0	1	1	0	0	0
+0	0	1	0	1	1	0	0	0	0	0	1
+0	0	0	1	0	0	1	1	0	1	0	0
+1	0	0	1	1	0	1	1	0	0	1	0
+0	0	0	0	1	0	0	0	1	0	1	1
+0	0	0	0	0	0	1	0	0	1	1	1
+0	0	0	0	0	0	0	1	1	1	1	1
+0	0	0	0	0	1	0	0	1	1	1	1
+
+
+Sample Output 1:
+--------------------------
+1461466548288  Thread 231 :  ****************************    I AM THE LEADER -> 231 ********************************	 parent : 231
+1461466548329  Thread 2 :  leader : 231	 parent : 231
+1461466548330  Thread 35 :  leader : 231	 parent : 231
+1461466548329  Thread 41 :  leader : 231	 parent : 231
+1461466548329  Thread 31 :  leader : 231	 parent : 231
+1461466548336  Thread 53 :  leader : 231	 parent : 31
+1461466548341  Thread 22 :  leader : 231	 parent : 2
+1461466548343  Thread 21 :  leader : 231	 parent : 35
+1461466548343  Thread 24 :  leader : 231	 parent : 41
+1461466548346  Thread 23 :  leader : 231	 parent : 35
+1461466548347  Thread 34 :  leader : 231	 parent : 22
+1461466548349  Thread 1 :  leader : 231	 parent : 22
+
+
+
+
+
+Sample Connectivity 2
+-------------------------------------------------
+10
+1	2 	3	44 	5	6 	7	8	9	10
+1	1	0	1	1	1	0	0	0	0
+1	1	1	0	1	0	1	0	0	0
+0	1	1	1	1	0	0	1	0	0
+1	0	1	1	1	0	0	0	0	0
+1	1	1	1	1	0	0	0	0	0
+1	0	0	0	0	1	1	0	1	1
+0	1	0	0	0	1	1	1	0	1
+0	0	1	0	0	0	1	1	1	1
+0	0	0	0	0	1	0	1	1	1
+0	0	0	0	0	1	1	1	1	1
+
+
+Sample output 2:
+---------------------------------------
+1461466868945  Thread 44 :  ****************************    I AM THE LEADER -> 44 ********************************	 parent : 44
+1461466868984  Thread 5 :  leader : 44	 parent : 44
+1461466868988  Thread 1 :  leader : 44	 parent : 44
+1461466868997  Thread 3 :  leader : 44	 parent : 44
+1461466869005  Thread 6 :  leader : 44	 parent : 1
+1461466869005  Thread 2 :  leader : 44	 parent : 3
+1461466869017  Thread 8 :  leader : 44	 parent : 3
+1461466869020  Thread 9 :  leader : 44	 parent : 8
+1461466869022  Thread 7 :  leader : 44	 parent : 8
+1461466869022  Thread 10 :  leader : 44	 parent : 8
+1461466869023  Thread 7 :  leader : 44	 parent : 8
+1461466869023  Thread 10 :  leader : 44	 parent : 8
